@@ -138,6 +138,7 @@ interface SessionStoreReadCounter {
 	loadCount: number;
 	readHeadCount: number;
 	readEntriesCount: number;
+	readFullPathCount: number;
 	readPathCount: number;
 	forkSelections: SessionForkSelection[];
 }
@@ -151,6 +152,7 @@ function createCountingInMemorySessionStore(): {
 		loadCount: 0,
 		readHeadCount: 0,
 		readEntriesCount: 0,
+		readFullPathCount: 0,
 		readPathCount: 0,
 		forkSelections: [],
 	};
@@ -164,6 +166,10 @@ function createCountingInMemorySessionStore(): {
 		readEntries: (options) => {
 			counter.readEntriesCount += 1;
 			return reader.readEntries(options);
+		},
+		readPathToRoot: (leafId) => {
+			counter.readFullPathCount += 1;
+			return reader.readPathToRoot(leafId);
 		},
 		readPathToRootOrCompaction: (leafId) => {
 			counter.readPathCount += 1;
@@ -260,6 +266,24 @@ describe("InMemorySessionStore", () => {
 		await opened.buildContext();
 
 		expect(counter).toMatchObject({ loadCount: 1, readHeadCount: 1, readEntriesCount: 0, readPathCount: 1 });
+	});
+
+	it("reads the complete active branch through the session facade", async () => {
+		const { store, counter } = createCountingInMemorySessionStore();
+		const repo = createSessionRepository({ store });
+		const session = await repo.create({ id: "session-1" });
+		const beforeCompaction = await session.appendMessage(createUserMessage("before"));
+		const compaction = await session.appendCompaction("summary", undefined, 1, undefined, undefined, undefined, []);
+		const afterCompaction = await session.appendMessage(createUserMessage("after"));
+		const opened = await repo.open(await session.getMetadata());
+
+		expect((await opened.getBranch()).map((entry) => entry.id)).toEqual([compaction, afterCompaction]);
+		expect((await opened.getFullBranch()).map((entry) => entry.id)).toEqual([
+			beforeCompaction,
+			compaction,
+			afterCompaction,
+		]);
+		expect(counter.readFullPathCount).toBe(1);
 	});
 
 	it("rejects repository operations and session writes after store disposal", async () => {

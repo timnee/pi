@@ -217,6 +217,7 @@ export interface Session<TMetadata extends SessionMetadata = SessionMetadata> {
 	getEntry(id: string): Promise<SessionTreeEntry | undefined>;
 	getEntries(options?: SessionEntryCursorOptions): Promise<SessionTreeEntry[]>;
 	getBranch(fromId?: string | null): Promise<SessionTreeEntry[]>;
+	getFullBranch(fromId?: string | null): Promise<SessionTreeEntry[]>;
 	buildContextEntries(options?: SessionContextBuildOptions): Promise<SessionTreeEntry[]>;
 	buildContext(options?: SessionContextBuildOptions): Promise<SessionContext>;
 	getLabel(id: string): Promise<string | undefined>;
@@ -287,6 +288,9 @@ class StoreSession<TMetadata extends SessionMetadata = SessionMetadata> implemen
 
 	async getBranch(fromId?: string | null): Promise<SessionTreeEntry[]> {
 		return [...(await this.reader.readPathToRootOrCompaction(fromId === undefined ? this.leafId : fromId))];
+	}
+	async getFullBranch(fromId?: string | null): Promise<SessionTreeEntry[]> {
+		return [...(await this.reader.readPathToRoot(fromId === undefined ? this.leafId : fromId))];
 	}
 
 	async buildContextEntries(options: SessionContextBuildOptions = {}): Promise<SessionTreeEntry[]> {

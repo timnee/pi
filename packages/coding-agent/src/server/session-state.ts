@@ -22,24 +22,9 @@ export async function inspectServerSession(
 	session: Session,
 ): Promise<{ branch: SessionTreeEntry[]; state: ServerSessionState; createdAt: number }> {
 	const metadata = await session.getMetadata();
-	const branch = await getFullActiveBranch(session);
+	const branch = await session.getFullBranch();
 	const createdAt = parseCreatedAt(metadata.createdAt);
 	return { branch, state: readServerSessionState(branch, createdAt), createdAt };
-}
-
-export async function getFullActiveBranch(session: Session): Promise<SessionTreeEntry[]> {
-	const branch: SessionTreeEntry[] = [];
-	const visited = new Set<string>();
-	let id = await session.getLeafId();
-	while (id !== null) {
-		if (visited.has(id)) throw new Error(`Session branch contains a cycle at ${id}`);
-		visited.add(id);
-		const entry = await session.getEntry(id);
-		if (!entry) throw new Error(`Session branch entry ${id} was not found`);
-		branch.unshift(entry);
-		id = entry.parentId;
-	}
-	return branch;
 }
 
 function isThinkingLevel(value: string): value is ThinkingLevel {

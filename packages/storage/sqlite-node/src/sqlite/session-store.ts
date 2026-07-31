@@ -228,6 +228,10 @@ class SqliteSessionStore
 				this.assertOpen();
 				return this.operations.enqueue(() => connection.readEntries(options));
 			},
+			readPathToRoot: (leafId) => {
+				this.assertOpen();
+				return this.operations.enqueue(() => connection.readPathToRoot(leafId));
+			},
 			readPathToRootOrCompaction: (leafId) => {
 				this.assertOpen();
 				return this.operations.enqueue(() => connection.readPathToRootOrCompaction(leafId));

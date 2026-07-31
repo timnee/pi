@@ -554,6 +554,7 @@ export interface SessionReader<TMetadata extends SessionMetadata = SessionMetada
 	readHead(): Promise<SessionHead>;
 	readEntry(id: string): Promise<SessionTreeEntry | undefined>;
 	readEntries(options?: SessionEntryCursorOptions): Promise<readonly SessionTreeEntry[]>;
+	readPathToRoot(leafId: string | null): Promise<readonly SessionTreeEntry[]>;
 	readPathToRootOrCompaction(leafId: string | null): Promise<readonly SessionTreeEntry[]>;
 }
 
