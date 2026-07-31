@@ -23,7 +23,7 @@ import { getAgentDir } from "../config.ts";
 import { ModelRuntime } from "../core/model-runtime.ts";
 import { SettingsManager } from "../core/settings-manager.ts";
 import { toPiServerError } from "./errors.ts";
-import { CodingAgentModelCatalog } from "./model-catalog.ts";
+import { ServerModelResolver } from "./model-resolver.ts";
 import { type SessionLease, SessionLockManager } from "./session-lock.ts";
 import { CodingAgentSessionRuntime } from "./session-runtime.ts";
 import { initializeStoredSession, inspectStoredSession } from "./session-state.ts";
@@ -58,7 +58,7 @@ export class CodingAgentServerBackend<
 	private readonly modelRuntime: ModelRuntime;
 	private readonly settingsManager: SettingsManager;
 	private readonly defaultCwd: string;
-	private readonly models: CodingAgentModelCatalog;
+	private readonly modelResolver: ServerModelResolver;
 	private readonly sessions: SessionRepository<TMetadata, TCreateOptions, TListOptions>;
 	private readonly createSessionOptions: (options: { id: string; cwd: string }) => TCreateOptions;
 	private readonly locks: SessionLockManager;
@@ -74,7 +74,7 @@ export class CodingAgentServerBackend<
 		this.modelRuntime = options.modelRuntime;
 		this.settingsManager = options.settingsManager;
 		this.defaultCwd = options.defaultCwd;
-		this.models = new CodingAgentModelCatalog(this.modelRuntime, this.settingsManager);
+		this.modelResolver = new ServerModelResolver(this.modelRuntime, this.settingsManager);
 		this.sessions = options.sessions;
 		this.createSessionOptions = options.createSessionOptions;
 		this.locks = new SessionLockManager(options.lockRoot);
@@ -134,11 +134,11 @@ export class CodingAgentServerBackend<
 	}
 
 	setDefaultSessionOptions(options: { model?: ModelRef; thinkingLevel?: ThinkingLevel }): void {
-		this.models.setDefaults(options);
+		this.modelResolver.setDefaults(options);
 	}
 
 	listModels(): Promise<ModelMetadata[]> {
-		return this.models.list();
+		return this.modelResolver.list();
 	}
 
 	async listSessions(): Promise<SessionSummary[]> {
@@ -175,8 +175,8 @@ export class CodingAgentServerBackend<
 	async createSession(options: CreateSessionOptions): Promise<PiSessionRuntime> {
 		const cwd = options.cwd ?? this.defaultCwd;
 		await validateCwd(cwd);
-		const model = await this.models.resolve(options.model);
-		const thinkingLevel = this.models.resolveThinkingLevel(model, options.thinkingLevel);
+		const model = await this.modelResolver.resolve(options.model);
+		const thinkingLevel = this.modelResolver.resolveThinkingLevel(model, options.thinkingLevel);
 		const lease = await this.locks.acquire(options.id);
 		let session: Session<TMetadata> | undefined;
 		try {
@@ -225,8 +225,8 @@ export class CodingAgentServerBackend<
 					`Session ${sessionId} has invalid thinking level: ${state.invalidThinkingLevel}`,
 				);
 			}
-			const model = await this.models.resolve(state.model);
-			const thinkingLevel = this.models.recoverThinkingLevel(model, state.thinkingLevel);
+			const model = await this.modelResolver.resolve(state.model);
+			const thinkingLevel = this.modelResolver.recoverThinkingLevel(model, state.thinkingLevel);
 			if (state.thinkingLevel !== thinkingLevel) await session.appendThinkingLevelChange(thinkingLevel);
 			return await this.createRuntime(session, model, thinkingLevel, lease, state.cwd);
 		} catch (error) {
@@ -245,7 +245,7 @@ export class CodingAgentServerBackend<
 		return CodingAgentSessionRuntime.create({
 			session,
 			modelRuntime: this.modelRuntime,
-			models: this.models,
+			modelResolver: this.modelResolver,
 			settingsManager: this.settingsManager,
 			model,
 			thinkingLevel,

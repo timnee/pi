@@ -5,7 +5,7 @@ import { DEFAULT_THINKING_LEVEL } from "../core/defaults.ts";
 import type { ModelRuntime } from "../core/model-runtime.ts";
 import type { SettingsManager } from "../core/settings-manager.ts";
 
-export class CodingAgentModelCatalog {
+export class ServerModelResolver {
 	private readonly modelRuntime: ModelRuntime;
 	private readonly settingsManager: SettingsManager;
 	private defaultModel: ModelRef | undefined;
