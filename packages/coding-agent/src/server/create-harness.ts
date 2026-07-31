@@ -30,27 +30,27 @@ export interface CreateServerHarnessOptions {
 
 export function createServerHarness(options: CreateServerHarnessOptions): AgentHarness<ExecutionToolContext> {
 	let harness: AgentHarness<ExecutionToolContext>;
-	const tools: AgentHarnessTool<ExecutionToolContext>[] = [
-		createReadTool(),
-		createBashTool({
-			commandPrefix: options.settingsManager.getShellCommandPrefix(),
-			promptGuidelines: ["Inspect PI_* environment variables for current model and session details."],
-			prepare: async (execution) => {
-				options.assertUsable();
-				const metadata = await options.session.getMetadata();
-				execution.env.PI_SESSION_ID = metadata.id;
-				if ("path" in metadata && typeof metadata.path === "string") execution.env.PI_SESSION_FILE = metadata.path;
-				execution.env.PI_PROVIDER = harness.getModel().provider;
-				execution.env.PI_MODEL = harness.getModel().id;
-				execution.env.PI_REASONING_LEVEL = harness.getThinkingLevel();
-			},
-		}),
-		createEditTool(),
-		createWriteTool(),
-	];
+	const readTool = createReadTool();
+	const bashTool = createBashTool({
+		commandPrefix: options.settingsManager.getShellCommandPrefix(),
+		promptGuidelines: ["Inspect PI_* environment variables for current model and session details."],
+		prepare: async (execution) => {
+			options.assertUsable();
+			const metadata = await options.session.getMetadata();
+			execution.env.PI_SESSION_ID = metadata.id;
+			if ("path" in metadata && typeof metadata.path === "string") execution.env.PI_SESSION_FILE = metadata.path;
+			execution.env.PI_PROVIDER = harness.getModel().provider;
+			execution.env.PI_MODEL = harness.getModel().id;
+			execution.env.PI_REASONING_LEVEL = harness.getThinkingLevel();
+		},
+	});
+	const tools: AgentHarnessTool<ExecutionToolContext>[] = [readTool, bashTool, createEditTool(), createWriteTool()];
 	const toolNames = tools.map((tool) => tool.name);
-	const toolSnippets = Object.fromEntries(tools.map((tool) => [tool.name, tool.description]));
-	const promptGuidelines = tools.flatMap((tool) => tool.promptGuidelines ?? []);
+	const toolSnippets = Object.fromEntries(tools.map((tool) => [tool.name, tool.promptSnippet ?? tool.description]));
+	const promptGuidelines = [
+		...(bashTool.promptGuidelines ?? []),
+		...tools.filter((tool) => tool !== bashTool).flatMap((tool) => tool.promptGuidelines ?? []),
+	];
 	harness = new AgentHarness<ExecutionToolContext>({
 		session: options.session,
 		models: options.modelRuntime,

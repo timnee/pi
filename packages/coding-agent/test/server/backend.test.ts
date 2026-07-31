@@ -112,9 +112,13 @@ describe("coding-agent server backend", () => {
 		]);
 		try {
 			await runtime.prompt({ text: "inspect tools" });
-			expect(systemPrompt).toContain(`- read: ${createReadTool().description}`);
+			expect(systemPrompt).toContain(`- read: ${createReadTool().promptSnippet}`);
+			expect(systemPrompt).not.toContain(`- read: ${createReadTool().description}`);
 			expect(systemPrompt).toContain("Use read to examine files instead of cat or sed.");
 			expect(systemPrompt).toContain("Inspect PI_* environment variables for current model and session details.");
+			expect(systemPrompt?.indexOf("Inspect PI_* environment variables")).toBeLessThan(
+				systemPrompt?.indexOf("Use read to examine files") ?? -1,
+			);
 		} finally {
 			await runtime.dispose();
 			await removeServerBackendFixture(fixture);
