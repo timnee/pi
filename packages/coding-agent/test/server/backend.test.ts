@@ -1,4 +1,5 @@
 import { join } from "node:path";
+import { createInMemorySessionStore, createReadTool, createSessionRepository } from "@earendil-works/pi-agent-core";
 import { fauxAssistantMessage } from "@earendil-works/pi-ai";
 import type { TranscriptProgress } from "@earendil-works/pi-protocol";
 import { describe, expect, test } from "vitest";
@@ -99,6 +100,55 @@ describe("coding-agent server backend", () => {
 			await removeServerBackendFixture(fixture);
 		}
 	});
+	test("builds its system prompt from harness tool metadata", async () => {
+		const fixture = await createServerBackendFixture();
+		const runtime = await fixture.backend.createSession({ id: "server-tool-prompt", cwd: fixture.cwd });
+		let systemPrompt: string | undefined;
+		fixture.faux.setResponses([
+			(context) => {
+				systemPrompt = context.systemPrompt;
+				return fauxAssistantMessage("ok");
+			},
+		]);
+		try {
+			await runtime.prompt({ text: "inspect tools" });
+			expect(systemPrompt).toContain(`- read: ${createReadTool().description}`);
+			expect(systemPrompt).toContain("Use read to examine files instead of cat or sed.");
+			expect(systemPrompt).toContain("Inspect PI_* environment variables for current model and session details.");
+		} finally {
+			await runtime.dispose();
+			await removeServerBackendFixture(fixture);
+		}
+	});
+
+	test("uses an injected SessionRepository without depending on storage metadata", async () => {
+		const fixture = await createServerBackendFixture();
+		const sessionRepository = createSessionRepository({ store: createInMemorySessionStore() });
+		const backend = await CodingAgentServerBackend.create({
+			defaultCwd: fixture.cwd,
+			modelRuntime: fixture.modelRuntime,
+			settingsManager: fixture.settingsManager,
+			sessionRepository,
+			createSessionOptions: ({ id }) => ({ id }),
+			lockRoot: join(fixture.root, "memory-locks"),
+		});
+		let runtime = await backend.createSession({ id: "memory-session", cwd: fixture.cwd });
+		try {
+			await runtime.dispose();
+			expect(await sessionRepository.list()).toEqual([
+				expect.not.objectContaining({ cwd: expect.anything(), path: expect.anything() }),
+			]);
+			expect(await backend.listSessions()).toContainEqual(
+				expect.objectContaining({ id: "memory-session", cwd: fixture.cwd }),
+			);
+			runtime = await backend.openSession("memory-session");
+			expect(await runtime.snapshot()).toMatchObject({ id: "memory-session", cwd: fixture.cwd });
+		} finally {
+			await runtime.dispose();
+			await removeServerBackendFixture(fixture);
+		}
+	});
+
 	test("preserves unexpected operational errors for boundary-safe handling", () => {
 		const operational = new Error("private filesystem detail");
 		expect(toPiServerError(operational)).toBe(operational);

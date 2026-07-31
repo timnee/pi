@@ -14,13 +14,12 @@ import type { SettingsManager } from "../core/settings-manager.ts";
 import { createServerHarness } from "./create-harness.ts";
 import { toPiServerError } from "./errors.ts";
 import type { SessionLease } from "./session-lock.ts";
-import type { CodingAgentSessionPersistence } from "./session-persistence.ts";
+import { inspectStoredSession } from "./session-state.ts";
 import { LiveTranscript } from "./transcript/live.ts";
 import { projectBranchTranscript } from "./transcript/projection.ts";
 
 export interface CreateCodingAgentSessionRuntimeOptions {
 	session: Session;
-	persistence: CodingAgentSessionPersistence;
 	modelRuntime: ModelRuntime;
 	settingsManager: SettingsManager;
 	model: Model<Api>;
@@ -31,7 +30,6 @@ export interface CreateCodingAgentSessionRuntimeOptions {
 
 export class CodingAgentSessionRuntime implements PiSessionRuntime {
 	private readonly session: Session;
-	private readonly persistence: CodingAgentSessionPersistence;
 	private readonly modelRuntime: ModelRuntime;
 	private readonly env: NodeExecutionEnv;
 	private readonly lease: SessionLease;
@@ -50,7 +48,6 @@ export class CodingAgentSessionRuntime implements PiSessionRuntime {
 
 	private constructor(options: CreateCodingAgentSessionRuntimeOptions, env: NodeExecutionEnv) {
 		this.session = options.session;
-		this.persistence = options.persistence;
 		this.modelRuntime = options.modelRuntime;
 		this.env = env;
 		this.lease = options.lease;
@@ -93,15 +90,13 @@ export class CodingAgentSessionRuntime implements PiSessionRuntime {
 	async snapshot(): Promise<SessionSnapshot> {
 		this.assertUsable();
 		const metadata = await this.session.getMetadata();
-		if (!("cwd" in metadata) || typeof metadata.cwd !== "string") {
-			throw new PiServerError("invalid_request", "Session metadata is missing cwd");
-		}
-		const { branch, state, createdAt } = await this.persistence.inspect(this.session);
+		const { branch, state, createdAt } = await inspectStoredSession(this.session);
+		if (!state.cwd) throw new PiServerError("invalid_request", "Session has no saved cwd");
 		const queuedSteer = this.liveTranscript.queuedSteer;
 		return {
 			id: metadata.id,
 			name: state.name,
-			cwd: metadata.cwd,
+			cwd: state.cwd,
 			createdAt,
 			updatedAt: state.updatedAt,
 			phase: this.getPhase(),

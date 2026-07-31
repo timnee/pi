@@ -1,5 +1,15 @@
 import { isAbsolute, join, resolve } from "node:path";
-import type { Session } from "@earendil-works/pi-agent-core";
+import {
+	createJsonlSessionStore,
+	createSessionRepository,
+	type JsonlSessionCreateOptions,
+	type JsonlSessionListOptions,
+	type JsonlSessionMetadata,
+	type Session,
+	type SessionCreateOptions,
+	type SessionMetadata,
+	type SessionRepository,
+} from "@earendil-works/pi-agent-core";
 import { NodeExecutionEnv } from "@earendil-works/pi-agent-core/node";
 import type { Api, Model } from "@earendil-works/pi-ai";
 import type { ModelMetadata, ModelRef, SessionSummary, ThinkingLevel } from "@earendil-works/pi-protocol";
@@ -15,45 +25,70 @@ import { SettingsManager } from "../core/settings-manager.ts";
 import { toPiServerError } from "./errors.ts";
 import { CodingAgentModelCatalog } from "./model-catalog.ts";
 import { type SessionLease, SessionLockManager } from "./session-lock.ts";
-import { CodingAgentSessionPersistence } from "./session-persistence.ts";
 import { CodingAgentSessionRuntime } from "./session-runtime.ts";
+import { initializeStoredSession, inspectStoredSession } from "./session-state.ts";
 
 const DEFAULT_SESSION_ROOT_NAME = "server-sessions";
+const DEFAULT_LOCK_ROOT_NAME = "server-session-locks";
 
 export interface CodingAgentServerBackendOptions {
 	agentDir?: string;
 	sessionRoot?: string;
+	lockRoot?: string;
 	defaultCwd?: string;
 	modelRuntime?: ModelRuntime;
 	settingsManager?: SettingsManager;
 }
 
-export class CodingAgentServerBackend implements PiSessionBackend {
+export interface CodingAgentServerRepositoryOptions<
+	TMetadata extends SessionMetadata,
+	TCreateOptions extends SessionCreateOptions,
+	TListOptions,
+> extends Omit<CodingAgentServerBackendOptions, "sessionRoot"> {
+	sessionRepository: SessionRepository<TMetadata, TCreateOptions, TListOptions>;
+	createSessionOptions(options: { id: string; cwd: string }): TCreateOptions;
+}
+
+export class CodingAgentServerBackend<
+	TMetadata extends SessionMetadata = JsonlSessionMetadata,
+	TCreateOptions extends SessionCreateOptions = JsonlSessionCreateOptions,
+	TListOptions = JsonlSessionListOptions,
+> implements PiSessionBackend
+{
 	private readonly modelRuntime: ModelRuntime;
 	private readonly settingsManager: SettingsManager;
 	private readonly defaultCwd: string;
 	private readonly models: CodingAgentModelCatalog;
-	private readonly persistence: CodingAgentSessionPersistence;
+	private readonly sessions: SessionRepository<TMetadata, TCreateOptions, TListOptions>;
+	private readonly createSessionOptions: (options: { id: string; cwd: string }) => TCreateOptions;
 	private readonly locks: SessionLockManager;
 
 	private constructor(options: {
 		modelRuntime: ModelRuntime;
 		settingsManager: SettingsManager;
-		sessionRoot: string;
+		sessions: SessionRepository<TMetadata, TCreateOptions, TListOptions>;
+		createSessionOptions(options: { id: string; cwd: string }): TCreateOptions;
+		lockRoot: string;
 		defaultCwd: string;
 	}) {
 		this.modelRuntime = options.modelRuntime;
 		this.settingsManager = options.settingsManager;
 		this.defaultCwd = options.defaultCwd;
 		this.models = new CodingAgentModelCatalog(this.modelRuntime, this.settingsManager);
-		this.persistence = new CodingAgentSessionPersistence(
-			new NodeExecutionEnv({ cwd: this.defaultCwd }),
-			options.sessionRoot,
-		);
-		this.locks = new SessionLockManager(options.sessionRoot);
+		this.sessions = options.sessions;
+		this.createSessionOptions = options.createSessionOptions;
+		this.locks = new SessionLockManager(options.lockRoot);
 	}
 
-	static async create(options: CodingAgentServerBackendOptions = {}): Promise<CodingAgentServerBackend> {
+	static create<TMetadata extends SessionMetadata, TCreateOptions extends SessionCreateOptions, TListOptions>(
+		options: CodingAgentServerRepositoryOptions<TMetadata, TCreateOptions, TListOptions>,
+	): Promise<CodingAgentServerBackend<TMetadata, TCreateOptions, TListOptions>>;
+	static create(options?: CodingAgentServerBackendOptions): Promise<CodingAgentServerBackend>;
+	static async create<TMetadata extends SessionMetadata, TCreateOptions extends SessionCreateOptions, TListOptions>(
+		options:
+			| CodingAgentServerBackendOptions
+			| CodingAgentServerRepositoryOptions<TMetadata, TCreateOptions, TListOptions> = {},
+	): Promise<CodingAgentServerBackend | CodingAgentServerBackend<TMetadata, TCreateOptions, TListOptions>> {
 		const agentDir = resolve(options.agentDir ?? getAgentDir());
 		const defaultCwd = resolve(options.defaultCwd ?? process.cwd());
 		const settingsSource =
@@ -67,9 +102,33 @@ export class CodingAgentServerBackend implements PiSessionBackend {
 				allowModelNetwork: false,
 			}));
 		await modelRuntime.getAvailable();
-		const sessionRoot = resolve(options.sessionRoot ?? join(agentDir, DEFAULT_SESSION_ROOT_NAME));
-		const backend = new CodingAgentServerBackend({ modelRuntime, settingsManager, sessionRoot, defaultCwd });
 		await validateCwd(defaultCwd);
+
+		if ("sessionRepository" in options) {
+			const backend = new CodingAgentServerBackend<TMetadata, TCreateOptions, TListOptions>({
+				modelRuntime,
+				settingsManager,
+				sessions: options.sessionRepository,
+				createSessionOptions: options.createSessionOptions,
+				lockRoot: resolve(options.lockRoot ?? join(agentDir, DEFAULT_LOCK_ROOT_NAME)),
+				defaultCwd,
+			});
+			await backend.locks.initialize();
+			return backend;
+		}
+
+		const sessionRoot = resolve(options.sessionRoot ?? join(agentDir, DEFAULT_SESSION_ROOT_NAME));
+		const sessions = createSessionRepository({
+			store: createJsonlSessionStore({ fs: new NodeExecutionEnv({ cwd: defaultCwd }), sessionsRoot: sessionRoot }),
+		});
+		const backend = new CodingAgentServerBackend({
+			modelRuntime,
+			settingsManager,
+			sessions,
+			createSessionOptions: ({ id, cwd }) => ({ id, cwd }),
+			lockRoot: resolve(options.lockRoot ?? sessionRoot),
+			defaultCwd,
+		});
 		await backend.locks.initialize();
 		return backend;
 	}
@@ -83,10 +142,13 @@ export class CodingAgentServerBackend implements PiSessionBackend {
 	}
 
 	async listSessions(): Promise<SessionSummary[]> {
-		const stored = await this.persistence.list();
+		const stored = await this.sessions.list();
 		return Promise.all(
-			stored.map(async ({ metadata, state, createdAt }) => {
+			stored.map(async (metadata) => {
 				try {
+					const session = await this.sessions.open(metadata);
+					const { state, createdAt } = await inspectStoredSession(session);
+					if (!state.cwd) throw new Error("stored session has no cwd");
 					if (!state.model) throw new Error("stored session has no model");
 					if (state.invalidThinkingLevel !== undefined) {
 						throw new Error(`stored session has invalid thinking level: ${state.invalidThinkingLevel}`);
@@ -94,7 +156,7 @@ export class CodingAgentServerBackend implements PiSessionBackend {
 					return {
 						id: metadata.id,
 						name: state.name,
-						cwd: metadata.cwd,
+						cwd: state.cwd,
 						createdAt,
 						updatedAt: state.updatedAt,
 						phase: "idle" as const,
@@ -116,21 +178,22 @@ export class CodingAgentServerBackend implements PiSessionBackend {
 		const model = await this.models.resolve(options.model);
 		const thinkingLevel = this.models.resolveThinkingLevel(model, options.thinkingLevel);
 		const lease = await this.locks.acquire(options.id);
-		let session: Session | undefined;
+		let session: Session<TMetadata> | undefined;
 		try {
-			if (await this.persistence.find(options.id)) {
+			if ((await this.sessions.list()).some((metadata) => metadata.id === options.id)) {
 				throw new PiServerError("invalid_request", `Session already exists: ${options.id}`);
 			}
-			session = await this.persistence.create({ cwd, id: options.id });
+			session = await this.sessions.create(this.createSessionOptions({ cwd, id: options.id }));
+			await initializeStoredSession(session, cwd);
 			await session.appendModelChange(model.provider, model.id);
 			await session.appendThinkingLevelChange(thinkingLevel);
 			if (options.name !== undefined) await session.appendSessionName(options.name);
-			return await this.createRuntime(session, model, thinkingLevel, lease);
+			return await this.createRuntime(session, model, thinkingLevel, lease, cwd);
 		} catch (error) {
 			const cleanupErrors: unknown[] = [];
 			if (session) {
 				try {
-					await this.persistence.delete(session);
+					await this.sessions.delete(await session.getMetadata());
 				} catch (cleanupError) {
 					cleanupErrors.push(cleanupError);
 				}
@@ -148,12 +211,13 @@ export class CodingAgentServerBackend implements PiSessionBackend {
 	}
 
 	async openSession(sessionId: string): Promise<PiSessionRuntime> {
-		const metadata = await this.persistence.find(sessionId);
+		const metadata = (await this.sessions.list()).find((candidate) => candidate.id === sessionId);
 		if (!metadata) throw new PiServerError("not_found", `Session was not found: ${sessionId}`);
 		const lease = await this.locks.acquire(sessionId);
 		try {
-			const session = await this.persistence.open(metadata);
-			const { state } = await this.persistence.inspect(session);
+			const session = await this.sessions.open(metadata);
+			const { state } = await inspectStoredSession(session);
+			if (!state.cwd) throw new PiServerError("invalid_request", `Session ${sessionId} has no saved cwd`);
 			if (!state.model) throw new PiServerError("invalid_request", `Session ${sessionId} has no saved model`);
 			if (state.invalidThinkingLevel !== undefined) {
 				throw new PiServerError(
@@ -164,7 +228,7 @@ export class CodingAgentServerBackend implements PiSessionBackend {
 			const model = await this.models.resolve(state.model);
 			const thinkingLevel = this.models.recoverThinkingLevel(model, state.thinkingLevel);
 			if (state.thinkingLevel !== thinkingLevel) await session.appendThinkingLevelChange(thinkingLevel);
-			return await this.createRuntime(session, model, thinkingLevel, lease);
+			return await this.createRuntime(session, model, thinkingLevel, lease, state.cwd);
 		} catch (error) {
 			await lease.release();
 			throw toPiServerError(error);
@@ -172,24 +236,20 @@ export class CodingAgentServerBackend implements PiSessionBackend {
 	}
 
 	private async createRuntime(
-		session: Session,
+		session: Session<TMetadata>,
 		model: Model<Api>,
 		thinkingLevel: ThinkingLevel,
 		lease: SessionLease,
+		cwd: string,
 	): Promise<CodingAgentSessionRuntime> {
-		const metadata = await session.getMetadata();
-		if (!("cwd" in metadata) || typeof metadata.cwd !== "string") {
-			throw new PiServerError("invalid_request", "Session metadata is missing cwd");
-		}
 		return CodingAgentSessionRuntime.create({
 			session,
-			persistence: this.persistence,
 			modelRuntime: this.modelRuntime,
 			settingsManager: this.settingsManager,
 			model,
 			thinkingLevel,
 			lease,
-			cwd: metadata.cwd,
+			cwd,
 		});
 	}
 }
