@@ -183,6 +183,7 @@ export class AgentHarness<
 	private readonly activeTasks = new Map<Promise<void>, TrackedTaskKind>();
 	private shutdownPromise?: Promise<void>;
 	private isShutdown = false;
+	private discardPendingWrites = false;
 	private pendingSessionWrites: PendingSessionWrite[] = [];
 	private model: Model<any>;
 	private thinkingLevel: ThinkingLevel;
@@ -552,6 +553,10 @@ export class AgentHarness<
 	}
 
 	private async flushPendingSessionWrites(): Promise<void> {
+		if (this.discardPendingWrites) {
+			this.pendingSessionWrites = [];
+			return;
+		}
 		while (this.pendingSessionWrites.length > 0) {
 			const write = this.pendingSessionWrites[0]!;
 			if (write.type === "message") {
@@ -578,6 +583,7 @@ export class AgentHarness<
 	}
 
 	private async handleAgentEvent(event: AgentEvent, signal?: AbortSignal): Promise<void> {
+		if (this.discardPendingWrites) return;
 		if (event.type === "message_end") {
 			await this.session.appendMessage(event.message);
 			await this.emitAny(event, signal);
@@ -1101,7 +1107,11 @@ export class AgentHarness<
 	}
 
 	/** Permanently stop this harness instance without deleting its durable session. */
-	requestShutdown(): void {
+	requestShutdown(options: { discardPendingWrites?: boolean } = {}): void {
+		if (options.discardPendingWrites) {
+			this.discardPendingWrites = true;
+			this.pendingSessionWrites = [];
+		}
 		if (this.isShutdown) return;
 		this.isShutdown = true;
 		this.pendingSessionWrites = [];

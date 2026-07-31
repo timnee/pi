@@ -208,6 +208,33 @@ describe("AgentHarness", () => {
 		});
 	});
 
+	it("can discard active work when shutting down after ownership is lost", async () => {
+		const registration = newFaux();
+		const entered = deferred();
+		const release = deferred();
+		registration.setResponses([
+			async () => {
+				entered.resolve();
+				await release.promise;
+				return fauxAssistantMessage("must not persist");
+			},
+		]);
+		const session = await createInMemorySession();
+		const harness = new AgentHarness({ models, session, model: registration.getModel() });
+		const prompt = harness.prompt("hello");
+		await entered.promise;
+
+		harness.requestShutdown({ discardPendingWrites: true });
+		release.resolve();
+
+		await expect(prompt).resolves.toMatchObject({ role: "assistant" });
+		await expect(harness.waitForShutdown()).resolves.toBeUndefined();
+		const messages = (await session.getEntries()).flatMap((entry) =>
+			entry.type === "message" ? [entry.message] : [],
+		);
+		expect(messages.map((message) => message.role)).toEqual(["user"]);
+	});
+
 	it("allows a hook to request shutdown without deadlocking its operation", async () => {
 		const registration = newFaux();
 		let providerCalls = 0;
