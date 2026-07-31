@@ -33,7 +33,7 @@ export function createServerHarness(options: CreateServerHarnessOptions): AgentH
 	const readTool = createReadTool();
 	const bashTool = createBashTool({
 		commandPrefix: options.settingsManager.getShellCommandPrefix(),
-		promptGuidelines: ["Inspect PI_* environment variables for current model and session details."],
+		prompt: { guidelines: ["Inspect PI_* environment variables for current model and session details."] },
 		prepare: async (execution) => {
 			options.assertUsable();
 			const metadata = await options.session.getMetadata();
@@ -46,10 +46,10 @@ export function createServerHarness(options: CreateServerHarnessOptions): AgentH
 	});
 	const tools: AgentHarnessTool<ExecutionToolContext>[] = [readTool, bashTool, createEditTool(), createWriteTool()];
 	const toolNames = tools.map((tool) => tool.name);
-	const toolSnippets = Object.fromEntries(tools.map((tool) => [tool.name, tool.promptSnippet ?? tool.description]));
+	const toolSnippets = Object.fromEntries(tools.map((tool) => [tool.name, tool.prompt?.snippet ?? tool.description]));
 	const promptGuidelines = [
-		...(bashTool.promptGuidelines ?? []),
-		...tools.filter((tool) => tool !== bashTool).flatMap((tool) => tool.promptGuidelines ?? []),
+		...(bashTool.prompt?.guidelines ?? []),
+		...tools.filter((tool) => tool !== bashTool).flatMap((tool) => tool.prompt?.guidelines ?? []),
 	];
 	harness = new AgentHarness<ExecutionToolContext>({
 		session: options.session,

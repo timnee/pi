@@ -112,7 +112,7 @@ describe("coding-agent server backend", () => {
 		]);
 		try {
 			await runtime.prompt({ text: "inspect tools" });
-			expect(systemPrompt).toContain(`- read: ${createReadTool().promptSnippet}`);
+			expect(systemPrompt).toContain(`- read: ${createReadTool().prompt?.snippet}`);
 			expect(systemPrompt).not.toContain(`- read: ${createReadTool().description}`);
 			expect(systemPrompt).toContain("Use read to examine files instead of cat or sed.");
 			expect(systemPrompt).toContain("Inspect PI_* environment variables for current model and session details.");

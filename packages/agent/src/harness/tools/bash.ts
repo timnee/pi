@@ -1,5 +1,5 @@
 import { type Static, Type } from "typebox";
-import type { AgentHarnessTool } from "../types.ts";
+import type { AgentHarnessTool, AgentHarnessToolPrompt } from "../types.ts";
 import { getOrThrow } from "../types.ts";
 import { executeShellWithCapture, type ShellCaptureProgress } from "../utils/shell-output.ts";
 import { DEFAULT_MAX_BYTES, DEFAULT_MAX_LINES, formatSize, type TruncationResult } from "../utils/truncate.ts";
@@ -36,8 +36,8 @@ export type BashPrepare<TContext extends ExecutionToolContext = ExecutionToolCon
 export interface BashToolOptions<TContext extends ExecutionToolContext = ExecutionToolContext> {
 	commandPrefix?: string;
 	prepare?: BashPrepare<TContext>;
-	/** Additional usage guidance contributed to an application's system prompt. */
-	promptGuidelines?: readonly string[];
+	/** Application-specific metadata added to this tool's system-prompt contribution. */
+	prompt?: Pick<AgentHarnessToolPrompt, "guidelines">;
 }
 
 function validateTimeout(timeout: number | undefined): void {
@@ -57,8 +57,10 @@ export function createBashTool<TContext extends ExecutionToolContext = Execution
 		name: "bash",
 		label: "bash",
 		description: `Execute a bash command in the current working directory. Returns stdout and stderr. Output is truncated to last ${DEFAULT_MAX_LINES} lines or ${DEFAULT_MAX_BYTES / 1024}KB (whichever is hit first). If truncated, full output is saved to a temp file. Optionally provide a timeout in seconds.`,
-		promptSnippet: "Execute bash commands (ls, grep, find, etc.)",
-		promptGuidelines: options?.promptGuidelines,
+		prompt: {
+			snippet: "Execute bash commands (ls, grep, find, etc.)",
+			guidelines: options?.prompt?.guidelines,
+		},
 		parameters: bashSchema,
 		async execute(_toolCallId, { command, timeout }, signal, onUpdate, context) {
 			validateTimeout(timeout);

@@ -122,13 +122,13 @@ describe("AgentHarness tools", () => {
 
 		expect(tools.map((tool) => tool.name)).toEqual(["read", "bash", "edit", "write"]);
 		expect(tools.every((tool) => tool.description.length > 0)).toBe(true);
-		expect(tools.map((tool) => tool.promptSnippet)).toEqual([
+		expect(tools.map((tool) => tool.prompt?.snippet)).toEqual([
 			"Read file contents",
 			"Execute bash commands (ls, grep, find, etc.)",
 			"Make precise file edits with exact text replacement, including multiple disjoint edits in one call",
 			"Create or overwrite files",
 		]);
-		expect(tools.flatMap((tool) => tool.promptGuidelines ?? [])).toEqual([
+		expect(tools.flatMap((tool) => tool.prompt?.guidelines ?? [])).toEqual([
 			"Use read to examine files instead of cat or sed.",
 			"Use edit for precise changes (edits[].oldText must match exactly)",
 			"When changing multiple separate locations in one file, use one edit call with multiple entries in edits[] instead of multiple edit calls",
