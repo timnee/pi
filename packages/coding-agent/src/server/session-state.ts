@@ -5,7 +5,7 @@ import { isAssistantMessage } from "./transcript/projection.ts";
 
 const SERVER_SESSION_ENTRY_TYPE = "pi-server-session";
 
-export interface StoredSessionState {
+export interface ServerSessionState {
 	cwd: string | undefined;
 	model: { provider: string; id: string } | undefined;
 	thinkingLevel: ThinkingLevel | undefined;
@@ -14,17 +14,17 @@ export interface StoredSessionState {
 	updatedAt: number;
 }
 
-export async function initializeStoredSession(session: Session, cwd: string): Promise<void> {
+export async function initializeServerSession(session: Session, cwd: string): Promise<void> {
 	await session.appendCustomEntry(SERVER_SESSION_ENTRY_TYPE, { cwd });
 }
 
-export async function inspectStoredSession(
+export async function inspectServerSession(
 	session: Session,
-): Promise<{ branch: SessionTreeEntry[]; state: StoredSessionState; createdAt: number }> {
+): Promise<{ branch: SessionTreeEntry[]; state: ServerSessionState; createdAt: number }> {
 	const metadata = await session.getMetadata();
 	const branch = await getFullActiveBranch(session);
 	const createdAt = parseCreatedAt(metadata.createdAt);
-	return { branch, state: readStoredSessionState(branch, createdAt), createdAt };
+	return { branch, state: readServerSessionState(branch, createdAt), createdAt };
 }
 
 export async function getFullActiveBranch(session: Session): Promise<SessionTreeEntry[]> {
@@ -46,9 +46,9 @@ function isThinkingLevel(value: string): value is ThinkingLevel {
 	return Check(ThinkingLevelSchema, value);
 }
 
-function readStoredSessionState(entries: readonly SessionTreeEntry[], createdAt: number): StoredSessionState {
+function readServerSessionState(entries: readonly SessionTreeEntry[], createdAt: number): ServerSessionState {
 	let cwd: string | undefined;
-	let model: StoredSessionState["model"];
+	let model: ServerSessionState["model"];
 	let thinkingLevel: ThinkingLevel | undefined;
 	let invalidThinkingLevel: string | undefined;
 	let name: string | undefined;

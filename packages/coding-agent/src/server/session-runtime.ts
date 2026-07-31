@@ -15,7 +15,7 @@ import { createServerHarness } from "./create-harness.ts";
 import { toPiServerError } from "./errors.ts";
 import type { ServerModelResolver } from "./model-resolver.ts";
 import type { SessionLease } from "./session-lock.ts";
-import { inspectStoredSession } from "./session-state.ts";
+import { inspectServerSession } from "./session-state.ts";
 import { LiveTranscript } from "./transcript/live.ts";
 import { projectBranchTranscript } from "./transcript/projection.ts";
 
@@ -94,7 +94,7 @@ export class CodingAgentSessionRuntime implements PiSessionRuntime {
 	async snapshot(): Promise<SessionSnapshot> {
 		this.assertUsable();
 		const metadata = await this.session.getMetadata();
-		const { branch, state, createdAt } = await inspectStoredSession(this.session);
+		const { branch, state, createdAt } = await inspectServerSession(this.session);
 		if (!state.cwd) throw new PiServerError("invalid_request", "Session has no saved cwd");
 		const queuedSteer = this.liveTranscript.queuedSteer;
 		return {

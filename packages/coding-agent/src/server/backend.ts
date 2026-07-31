@@ -26,7 +26,7 @@ import { toPiServerError } from "./errors.ts";
 import { ServerModelResolver } from "./model-resolver.ts";
 import { type SessionLease, SessionLockManager } from "./session-lock.ts";
 import { CodingAgentSessionRuntime } from "./session-runtime.ts";
-import { initializeStoredSession, inspectStoredSession } from "./session-state.ts";
+import { initializeServerSession, inspectServerSession } from "./session-state.ts";
 
 const DEFAULT_SESSION_ROOT_NAME = "server-sessions";
 const DEFAULT_LOCK_ROOT_NAME = "server-session-locks";
@@ -147,7 +147,7 @@ export class CodingAgentServerBackend<
 			stored.map(async (metadata) => {
 				try {
 					const session = await this.sessions.open(metadata);
-					const { state, createdAt } = await inspectStoredSession(session);
+					const { state, createdAt } = await inspectServerSession(session);
 					if (!state.cwd) throw new Error("stored session has no cwd");
 					if (!state.model) throw new Error("stored session has no model");
 					if (state.invalidThinkingLevel !== undefined) {
@@ -184,7 +184,7 @@ export class CodingAgentServerBackend<
 				throw new PiServerError("invalid_request", `Session already exists: ${options.id}`);
 			}
 			session = await this.sessions.create(this.createSessionOptions({ cwd, id: options.id }));
-			await initializeStoredSession(session, cwd);
+			await initializeServerSession(session, cwd);
 			await session.appendModelChange(model.provider, model.id);
 			await session.appendThinkingLevelChange(thinkingLevel);
 			if (options.name !== undefined) await session.appendSessionName(options.name);
@@ -216,7 +216,7 @@ export class CodingAgentServerBackend<
 		const lease = await this.locks.acquire(sessionId);
 		try {
 			const session = await this.sessions.open(metadata);
-			const { state } = await inspectStoredSession(session);
+			const { state } = await inspectServerSession(session);
 			if (!state.cwd) throw new PiServerError("invalid_request", `Session ${sessionId} has no saved cwd`);
 			if (!state.model) throw new PiServerError("invalid_request", `Session ${sessionId} has no saved model`);
 			if (state.invalidThinkingLevel !== undefined) {
