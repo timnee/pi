@@ -7,6 +7,10 @@
 - Changed `Session` into the sole opened-session aggregate and replaced `SessionStorage`, `SessionRepo`, and concrete per-session persistence classes with a non-owning `SessionRepository` and caller-owned, async-disposable `SessionStore` instances. Create stores with `createInMemorySessionStore()` or `createJsonlSessionStore()`, compose them with `createSessionRepository({ store, search: createScanningSessionSearch(store) })`, and dispose the store after draining harness and session work.
 - `Session` instances are now created by `SessionRepository`; direct construction from an independently supplied store and snapshot was removed.
 
+### Added
+
+- Added tool-owned system-prompt snippets and usage guidance to `AgentHarnessTool` metadata ([#7396](https://github.com/earendil-works/pi/pull/7396)).
+
 ## [0.83.0] - 2026-07-29
 
 ## [0.82.1] - 2026-07-25

@@ -245,6 +245,7 @@ export class CodingAgentServerBackend<
 		return CodingAgentSessionRuntime.create({
 			session,
 			modelRuntime: this.modelRuntime,
+			models: this.models,
 			settingsManager: this.settingsManager,
 			model,
 			thinkingLevel,

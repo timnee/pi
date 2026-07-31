@@ -31,18 +31,28 @@ export class CodingAgentModelCatalog {
 	async resolve(reference?: ModelRef): Promise<Model<Api>> {
 		await this.modelRuntime.getAvailable();
 		const requested = reference ?? this.defaultModel;
-		let model = requested ? this.modelRuntime.getModel(requested.provider, requested.id) : undefined;
-		if (!model && !requested) {
-			const provider = this.settingsManager.getDefaultProvider();
-			const id = this.settingsManager.getDefaultModel();
-			const configured = provider && id ? this.modelRuntime.getModel(provider, id) : undefined;
-			if (configured && this.modelRuntime.hasConfiguredAuth(configured.provider)) model = configured;
+		if (requested) {
+			const model = this.modelRuntime.getModel(requested.provider, requested.id);
+			if (!model)
+				throw new PiServerError("invalid_request", `Could not resolve ${requested.provider}/${requested.id}`);
+			return this.requireAuthenticated(model);
 		}
-		if (!model && !requested) model = this.modelRuntime.getAvailableSnapshot()[0];
-		if (!model) {
-			const label = requested ? `${requested.provider}/${requested.id}` : "a default model";
-			throw new PiServerError("invalid_request", `Could not resolve ${label}`);
-		}
+		const provider = this.settingsManager.getDefaultProvider();
+		const id = this.settingsManager.getDefaultModel();
+		const configured = provider && id ? this.modelRuntime.getModel(provider, id) : undefined;
+		let model = configured && this.modelRuntime.hasConfiguredAuth(configured.provider) ? configured : undefined;
+		if (!model) model = this.modelRuntime.getAvailableSnapshot()[0];
+		if (!model) throw new PiServerError("invalid_request", "Could not resolve a default model");
+		return this.requireAuthenticated(model);
+	}
+
+	resolveAvailable(reference: ModelRef): Model<Api> {
+		const model = this.modelRuntime.getModel(reference.provider, reference.id);
+		if (!model) throw new PiServerError("invalid_request", `Unknown model: ${reference.provider}/${reference.id}`);
+		return this.requireAuthenticated(model);
+	}
+
+	private requireAuthenticated(model: Model<Api>): Model<Api> {
 		if (!this.modelRuntime.hasConfiguredAuth(model.provider)) {
 			throw new PiServerError("invalid_request", `Model is not authenticated: ${model.provider}/${model.id}`);
 		}

@@ -10,6 +10,7 @@
 - Added a draggable transcript scrollbar to fullscreen mode with configurable `auto`, `always`, and `hidden` modes through `/settings`; `always` reserves the rightmost column.
 - Added page scrolling and marked-message navigation shortcuts to fullscreen mode.
 - Added an optional `scrollbarThumb` theme color for fullscreen scrollbar thumbs, falling back to `selectedBg`.
+- Added an experimental `@earendil-works/pi-coding-agent/server` backend for harness-driven pi servers, with injectable `SessionRepository` persistence ([#7396](https://github.com/earendil-works/pi/pull/7396)).
 
 ### Fixed
 

@@ -5,6 +5,7 @@
 ### Breaking Changes
 
 - Changed `toProtocolToolResultMessage()` to require the original `ToolCall` and verify tool result association.
+- Removed the legacy server CLI, `./legacy` export, supervisor, IPC, Radius, and legacy persistence implementation; server execution now belongs to host-provided backends such as `@earendil-works/pi-coding-agent/server` ([#7396](https://github.com/earendil-works/pi/pull/7396)).
 
 ### Fixed
 

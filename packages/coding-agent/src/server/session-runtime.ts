@@ -1,6 +1,6 @@
 import type { AgentHarness, ExecutionToolContext, Session } from "@earendil-works/pi-agent-core";
 import { NodeExecutionEnv } from "@earendil-works/pi-agent-core/node";
-import { type Api, clampThinkingLevel, type Model } from "@earendil-works/pi-ai";
+import type { Api, Model } from "@earendil-works/pi-ai";
 import type { ModelRef, SessionPhase, SessionSnapshot, ThinkingLevel } from "@earendil-works/pi-protocol";
 import {
 	PiServerError,
@@ -13,6 +13,7 @@ import type { ModelRuntime } from "../core/model-runtime.ts";
 import type { SettingsManager } from "../core/settings-manager.ts";
 import { createServerHarness } from "./create-harness.ts";
 import { toPiServerError } from "./errors.ts";
+import type { CodingAgentModelCatalog } from "./model-catalog.ts";
 import type { SessionLease } from "./session-lock.ts";
 import { inspectStoredSession } from "./session-state.ts";
 import { LiveTranscript } from "./transcript/live.ts";
@@ -21,6 +22,7 @@ import { projectBranchTranscript } from "./transcript/projection.ts";
 export interface CreateCodingAgentSessionRuntimeOptions {
 	session: Session;
 	modelRuntime: ModelRuntime;
+	models: CodingAgentModelCatalog;
 	settingsManager: SettingsManager;
 	model: Model<Api>;
 	thinkingLevel: ThinkingLevel;
@@ -31,6 +33,7 @@ export interface CreateCodingAgentSessionRuntimeOptions {
 export class CodingAgentSessionRuntime implements PiSessionRuntime {
 	private readonly session: Session;
 	private readonly modelRuntime: ModelRuntime;
+	private readonly models: CodingAgentModelCatalog;
 	private readonly env: NodeExecutionEnv;
 	private readonly lease: SessionLease;
 	private readonly harness: AgentHarness<ExecutionToolContext>;
@@ -49,6 +52,7 @@ export class CodingAgentSessionRuntime implements PiSessionRuntime {
 	private constructor(options: CreateCodingAgentSessionRuntimeOptions, env: NodeExecutionEnv) {
 		this.session = options.session;
 		this.modelRuntime = options.modelRuntime;
+		this.models = options.models;
 		this.env = env;
 		this.lease = options.lease;
 		const retry = options.settingsManager.getProviderRetrySettings();
@@ -151,18 +155,11 @@ export class CodingAgentSessionRuntime implements PiSessionRuntime {
 
 	async setModel(reference: ModelRef): Promise<void> {
 		await this.runExclusiveMutation("set model", () => {
-			const model = this.modelRuntime.getModel(reference.provider, reference.id);
-			if (!model) throw new PiServerError("invalid_request", `Unknown model: ${reference.provider}/${reference.id}`);
-			if (!this.modelRuntime.hasConfiguredAuth(model.provider)) {
-				throw new PiServerError(
-					"invalid_request",
-					`Model is not authenticated: ${reference.provider}/${reference.id}`,
-				);
-			}
+			const model = this.models.resolveAvailable(reference);
 			return async () => {
 				await this.harness.setModel(model);
 				const current = this.harness.getThinkingLevel();
-				const clamped = clampThinkingLevel(model, current);
+				const clamped = this.models.recoverThinkingLevel(model, current);
 				if (clamped !== current) await this.harness.setThinkingLevel(clamped);
 			};
 		});
@@ -171,12 +168,7 @@ export class CodingAgentSessionRuntime implements PiSessionRuntime {
 	async setThinking(thinkingLevel: ThinkingLevel): Promise<void> {
 		await this.runExclusiveMutation("set thinking", () => {
 			const model = this.harness.getModel();
-			if (clampThinkingLevel(model, thinkingLevel) !== thinkingLevel) {
-				throw new PiServerError(
-					"invalid_request",
-					`Thinking level ${thinkingLevel} is not supported by ${model.provider}/${model.id}`,
-				);
-			}
+			this.models.resolveThinkingLevel(model, thinkingLevel);
 			return () => this.harness.setThinkingLevel(thinkingLevel);
 		});
 	}
