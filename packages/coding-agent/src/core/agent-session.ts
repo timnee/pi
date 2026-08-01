@@ -404,10 +404,16 @@ export class AgentSession {
 		return this._modelRuntime;
 	}
 
+	/** Apply a resolved auth baseUrl override onto a model, if present. */
+	private _withResolvedBaseUrl<M extends Model<any>>(model: M, baseUrl?: string): M {
+		return baseUrl ? { ...model, baseUrl } : model;
+	}
+
 	private async _getRequiredRequestAuth(model: Model<any>): Promise<{
 		apiKey?: string;
 		headers?: Record<string, string>;
 		env?: Record<string, string>;
+		baseUrl?: string;
 	}> {
 		let result: AuthResult | undefined;
 		try {
@@ -424,6 +430,7 @@ export class AgentSession {
 				apiKey: result.auth.apiKey,
 				headers: withoutDeletedHeaders(result.auth.headers),
 				env: result.env,
+				baseUrl: result.auth.baseUrl,
 			};
 		}
 
@@ -442,6 +449,7 @@ export class AgentSession {
 		apiKey?: string;
 		headers?: Record<string, string>;
 		env?: Record<string, string>;
+		baseUrl?: string;
 	}> {
 		if (this.agent.streamFunction === streamSimple) {
 			return this._getRequiredRequestAuth(model);
@@ -450,7 +458,12 @@ export class AgentSession {
 		try {
 			const result = await this._modelRuntime.getAuth(model);
 			return result
-				? { apiKey: result.auth.apiKey, headers: withoutDeletedHeaders(result.auth.headers), env: result.env }
+				? {
+						apiKey: result.auth.apiKey,
+						headers: withoutDeletedHeaders(result.auth.headers),
+						env: result.env,
+						baseUrl: result.auth.baseUrl,
+					}
 				: {};
 		} catch {
 			return {};
@@ -1791,7 +1804,8 @@ export class AgentSession {
 				throw new Error(formatNoModelSelectedMessage());
 			}
 
-			const { apiKey, headers, env } = await this._getSummarizationRequestAuth(this.model);
+			const { apiKey, headers, env, baseUrl } = await this._getSummarizationRequestAuth(this.model);
+			const summarizationModel = this._withResolvedBaseUrl(this.model, baseUrl);
 
 			const pathEntries = this.sessionManager.getBranch();
 			const settings = this.settingsManager.getCompactionSettings();
@@ -1847,7 +1861,7 @@ export class AgentSession {
 				// Generate compaction result
 				const result = await compact(
 					preparation,
-					this.model,
+					summarizationModel,
 					apiKey,
 					headers,
 					customInstructions,
@@ -2056,11 +2070,13 @@ export class AgentSession {
 			let apiKey: string | undefined;
 			let headers: Record<string, string> | undefined;
 			let env: Record<string, string> | undefined;
+			let baseUrl: string | undefined;
 			if (this.agent.streamFunction === streamSimple) {
-				({ apiKey, headers, env } = await this._getRequiredRequestAuth(this.model));
+				({ apiKey, headers, env, baseUrl } = await this._getRequiredRequestAuth(this.model));
 			} else {
-				({ apiKey, headers, env } = await this._getSummarizationRequestAuth(this.model));
+				({ apiKey, headers, env, baseUrl } = await this._getSummarizationRequestAuth(this.model));
 			}
+			const summarizationModel = this._withResolvedBaseUrl(this.model, baseUrl);
 
 			const pathEntries = this.sessionManager.getBranch();
 
@@ -2121,7 +2137,7 @@ export class AgentSession {
 				// Generate compaction result
 				const compactResult = await compact(
 					preparation,
-					this.model,
+					summarizationModel,
 					apiKey,
 					headers,
 					undefined,
@@ -2982,10 +2998,11 @@ export class AgentSession {
 			let summaryUsage: Usage | undefined;
 			if (options.summarize && entriesToSummarize.length > 0 && !extensionSummary) {
 				const model = this.model!;
-				const { apiKey, headers, env } = await this._getSummarizationRequestAuth(model);
+				const { apiKey, headers, env, baseUrl } = await this._getSummarizationRequestAuth(model);
+				const summarizationModel = this._withResolvedBaseUrl(model, baseUrl);
 				const branchSummarySettings = this.settingsManager.getBranchSummarySettings();
 				const result = await generateBranchSummary(entriesToSummarize, {
-					model,
+					model: summarizationModel,
 					apiKey,
 					headers,
 					env,
