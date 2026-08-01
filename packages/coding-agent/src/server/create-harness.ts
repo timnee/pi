@@ -16,6 +16,7 @@ import type { ModelRuntime } from "../core/model-runtime.ts";
 import { mergeProviderAttributionHeaders } from "../core/provider-attribution.ts";
 import type { SettingsManager } from "../core/settings-manager.ts";
 import { buildSystemPrompt } from "../core/system-prompt.ts";
+import { codingToolPrompts } from "../core/tools/tool-prompt.ts";
 
 export interface CreateServerHarnessOptions {
 	session: Session;
@@ -33,7 +34,6 @@ export function createServerHarness(options: CreateServerHarnessOptions): AgentH
 	const readTool = createReadTool();
 	const bashTool = createBashTool({
 		commandPrefix: options.settingsManager.getShellCommandPrefix(),
-		prompt: { guidelines: ["Inspect PI_* environment variables for current model and session details."] },
 		prepare: async (execution) => {
 			options.assertUsable();
 			const metadata = await options.session.getMetadata();
@@ -45,11 +45,11 @@ export function createServerHarness(options: CreateServerHarnessOptions): AgentH
 		},
 	});
 	const tools: AgentHarnessTool<ExecutionToolContext>[] = [readTool, bashTool, createEditTool(), createWriteTool()];
-	const toolNames = tools.map((tool) => tool.name);
-	const toolSnippets = Object.fromEntries(tools.map((tool) => [tool.name, tool.prompt?.snippet ?? tool.description]));
+	const toolNames = ["read", "bash", "edit", "write"] as const;
+	const toolSnippets = Object.fromEntries(toolNames.map((name) => [name, codingToolPrompts[name].promptSnippet]));
 	const promptGuidelines = [
-		...(bashTool.prompt?.guidelines ?? []),
-		...tools.filter((tool) => tool !== bashTool).flatMap((tool) => tool.prompt?.guidelines ?? []),
+		...codingToolPrompts.bash.promptGuidelines,
+		...toolNames.filter((name) => name !== "bash").flatMap((name) => codingToolPrompts[name].promptGuidelines),
 	];
 	harness = new AgentHarness<ExecutionToolContext>({
 		session: options.session,
@@ -57,7 +57,7 @@ export function createServerHarness(options: CreateServerHarnessOptions): AgentH
 		model: options.model,
 		thinkingLevel: options.thinkingLevel,
 		tools,
-		activeToolNames: toolNames,
+		activeToolNames: [...toolNames],
 		toolContext: { env: options.env },
 		resources: {},
 		steeringMode: options.settingsManager.getSteeringMode(),
@@ -69,7 +69,7 @@ export function createServerHarness(options: CreateServerHarnessOptions): AgentH
 			const cwd = "cwd" in metadata && typeof metadata.cwd === "string" ? metadata.cwd : options.env.cwd;
 			return buildSystemPrompt({
 				cwd,
-				selectedTools: toolNames,
+				selectedTools: [...toolNames],
 				toolSnippets,
 				promptGuidelines,
 				contextFiles: [],

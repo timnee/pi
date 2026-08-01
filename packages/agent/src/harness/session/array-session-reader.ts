@@ -26,28 +26,6 @@ export function createArraySessionReader<TMetadata extends SessionMetadata>(
 		return entries;
 	};
 
-	const readPath = (requestedLeafId: string | null, stopAtCompaction: boolean): SessionTreeEntry[] => {
-		updateIndex();
-		if (requestedLeafId === null) return [];
-		const path: SessionTreeEntry[] = [];
-		let stopAtEntryId: string | null = null;
-		let current = byId.get(requestedLeafId);
-		if (!current) throw new SessionError("not_found", `Entry ${requestedLeafId} not found`);
-		while (current) {
-			path.push(current);
-			if (stopAtEntryId !== null && current.id === stopAtEntryId) break;
-			if (stopAtCompaction && current.type === "compaction") {
-				if (current.retainedTail) break;
-				stopAtEntryId = current.firstKeptEntryId ?? null;
-			}
-			if (!current.parentId) break;
-			const parent = byId.get(current.parentId);
-			if (!parent) throw new SessionError("invalid_session", `Entry ${current.parentId} not found`);
-			current = parent;
-		}
-		return path.reverse();
-	};
-
 	return {
 		metadata,
 		async readHead() {
@@ -67,11 +45,26 @@ export function createArraySessionReader<TMetadata extends SessionMetadata>(
 			const end = options?.limit === undefined ? undefined : start + options.limit;
 			return entries.slice(start, end);
 		},
-		async readPathToRoot(requestedLeafId) {
-			return readPath(requestedLeafId, false);
-		},
 		async readPathToRootOrCompaction(requestedLeafId) {
-			return readPath(requestedLeafId, true);
+			updateIndex();
+			if (requestedLeafId === null) return [];
+			const path: SessionTreeEntry[] = [];
+			let stopAtEntryId: string | null = null;
+			let current = byId.get(requestedLeafId);
+			if (!current) throw new SessionError("not_found", `Entry ${requestedLeafId} not found`);
+			while (current) {
+				path.push(current);
+				if (stopAtEntryId !== null && current.id === stopAtEntryId) break;
+				if (current.type === "compaction") {
+					if (current.retainedTail) break;
+					stopAtEntryId = current.firstKeptEntryId ?? null;
+				}
+				if (!current.parentId) break;
+				const parent = byId.get(current.parentId);
+				if (!parent) throw new SessionError("invalid_session", `Entry ${current.parentId} not found`);
+				current = parent;
+			}
+			return path.reverse();
 		},
 	};
 }

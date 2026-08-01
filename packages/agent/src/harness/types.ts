@@ -95,21 +95,12 @@ export interface AgentHarnessResources<
 	skills?: TSkill[];
 }
 
-export interface AgentHarnessToolPrompt {
-	/** Concise summary used when listing this tool in an application's system prompt. */
-	snippet?: string;
-	/** Usage guidance contributed by this tool to an application's system prompt. */
-	guidelines?: readonly string[];
-}
-
 /** Tool definition executed by an {@link AgentHarness} with an application-defined context. */
 export type AgentHarnessTool<
 	TContext extends object | undefined,
 	TParameters extends TSchema = TSchema,
 	TDetails = unknown,
 > = Omit<AgentTool<TParameters, TDetails>, "execute"> & {
-	/** Optional metadata contributed by this tool to an application's system prompt. */
-	prompt?: AgentHarnessToolPrompt;
 	/** Execute the tool call with the context resolved for the current turn snapshot. */
 	execute(
 		toolCallId: string,
@@ -554,7 +545,6 @@ export interface SessionReader<TMetadata extends SessionMetadata = SessionMetada
 	readHead(): Promise<SessionHead>;
 	readEntry(id: string): Promise<SessionTreeEntry | undefined>;
 	readEntries(options?: SessionEntryCursorOptions): Promise<readonly SessionTreeEntry[]>;
-	readPathToRoot(leafId: string | null): Promise<readonly SessionTreeEntry[]>;
 	readPathToRootOrCompaction(leafId: string | null): Promise<readonly SessionTreeEntry[]>;
 }
 

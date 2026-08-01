@@ -9,8 +9,7 @@
 
 ### Added
 
-- Added tool-owned system-prompt snippets and usage guidance to `AgentHarnessTool` metadata ([#7396](https://github.com/earendil-works/pi/pull/7396)).
-- Added complete active-branch reads to `SessionReader` and the `Session` facade ([#7396](https://github.com/earendil-works/pi/pull/7396)).
+- Added complete active-branch reads to the `Session` facade ([#7396](https://github.com/earendil-works/pi/pull/7396)).
 
 ## [0.83.0] - 2026-07-29
 

@@ -290,7 +290,24 @@ class StoreSession<TMetadata extends SessionMetadata = SessionMetadata> implemen
 		return [...(await this.reader.readPathToRootOrCompaction(fromId === undefined ? this.leafId : fromId))];
 	}
 	async getFullBranch(fromId?: string | null): Promise<SessionTreeEntry[]> {
-		return [...(await this.reader.readPathToRoot(fromId === undefined ? this.leafId : fromId))];
+		const leafId = fromId === undefined ? this.leafId : fromId;
+		if (leafId === null) return [];
+		const byId = new Map((await this.reader.readEntries()).map((entry) => [entry.id, entry]));
+		const branch: SessionTreeEntry[] = [];
+		const visited = new Set<string>();
+		let id: string | null = leafId;
+		while (id !== null) {
+			if (visited.has(id)) throw new SessionError("invalid_session", `Session branch contains a cycle at ${id}`);
+			visited.add(id);
+			const entry = byId.get(id);
+			if (!entry) {
+				const code = id === leafId ? "not_found" : "invalid_session";
+				throw new SessionError(code, `Entry ${id} not found`);
+			}
+			branch.push(entry);
+			id = entry.parentId;
+		}
+		return branch.reverse();
 	}
 
 	async buildContextEntries(options: SessionContextBuildOptions = {}): Promise<SessionTreeEntry[]> {

@@ -22,10 +22,6 @@ export function createWriteTool<TContext extends ExecutionToolContext = Executio
 		label: "write",
 		description:
 			"Write content to a file. Creates the file if it doesn't exist, overwrites if it does. Automatically creates parent directories.",
-		prompt: {
-			snippet: "Create or overwrite files",
-			guidelines: ["Use write only for new files or complete rewrites."],
-		},
 		parameters: writeSchema,
 		async execute(_toolCallId, { path, content }, signal, _onUpdate, { env }) {
 			const absolutePath = await resolveToolPath(env, path, signal);

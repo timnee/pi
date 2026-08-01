@@ -105,15 +105,7 @@ export class SqliteSessionConnection implements SessionReader<SqliteSessionMetad
 	private activeBranchId: string | null;
 	private materializedState: SessionMaterializedState;
 
-	readPathToRoot(leafId: string | null): Promise<SessionTreeEntry[]> {
-		return this.readPath(leafId, false);
-	}
-
-	readPathToRootOrCompaction(leafId: string | null): Promise<SessionTreeEntry[]> {
-		return this.readPath(leafId, true);
-	}
-
-	private async readPath(leafId: string | null, stopAtCompaction: boolean): Promise<SessionTreeEntry[]> {
+	async readPathToRootOrCompaction(leafId: string | null): Promise<SessionTreeEntry[]> {
 		if (leafId === null) return [];
 		const path: SessionTreeEntry[] = [];
 		let stopAtEntryId: string | null = null;
@@ -122,7 +114,7 @@ export class SqliteSessionConnection implements SessionReader<SqliteSessionMetad
 		while (current) {
 			path.push(current);
 			if (stopAtEntryId !== null && current.id === stopAtEntryId) break;
-			if (stopAtCompaction && current.type === "compaction") {
+			if (current.type === "compaction") {
 				if (current.retainedTail) break;
 				stopAtEntryId = current.firstKeptEntryId ?? null;
 			}

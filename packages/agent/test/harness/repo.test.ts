@@ -138,7 +138,6 @@ interface SessionStoreReadCounter {
 	loadCount: number;
 	readHeadCount: number;
 	readEntriesCount: number;
-	readFullPathCount: number;
 	readPathCount: number;
 	forkSelections: SessionForkSelection[];
 }
@@ -152,7 +151,6 @@ function createCountingInMemorySessionStore(): {
 		loadCount: 0,
 		readHeadCount: 0,
 		readEntriesCount: 0,
-		readFullPathCount: 0,
 		readPathCount: 0,
 		forkSelections: [],
 	};
@@ -166,10 +164,6 @@ function createCountingInMemorySessionStore(): {
 		readEntries: (options) => {
 			counter.readEntriesCount += 1;
 			return reader.readEntries(options);
-		},
-		readPathToRoot: (leafId) => {
-			counter.readFullPathCount += 1;
-			return reader.readPathToRoot(leafId);
 		},
 		readPathToRootOrCompaction: (leafId) => {
 			counter.readPathCount += 1;
@@ -283,7 +277,7 @@ describe("InMemorySessionStore", () => {
 			compaction,
 			afterCompaction,
 		]);
-		expect(counter.readFullPathCount).toBe(1);
+		expect(counter.readEntriesCount).toBe(1);
 	});
 
 	it("rejects repository operations and session writes after store disposal", async () => {
